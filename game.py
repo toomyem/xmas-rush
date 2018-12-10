@@ -89,6 +89,45 @@ class Parser:
     def next_int(self):
         return int(self.next_word())
 
+    def parse_player_info(self):
+        num_cards = self.next_int()
+        pos_x = self.next_int()
+        pos_y = self.next_int()
+        pattern = self.next_word()
+        return PlayerInfo(num_cards, Position(pos_x, pos_y), Tile(pattern))
+
+    def parse_items(self):
+        num_items = self.next_int()
+        items = []
+        for _ in range(num_items):
+            name = self.next_word()
+            pos_x = self.next_int()
+            pos_y = self.next_int()
+            plr_id = self.next_int()
+            items.append(Item(name, Position(pos_x, pos_y), plr_id))
+        return items
+
+    def parse_quests(self):
+        num_quests = self.next_int()
+        quests = []
+        for _ in range(num_quests):
+            name = self.next_word()
+            plr_id = self.next_int()
+            quests.append(Quest(name, plr_id))
+        return quests
+
+    def parse_board(self, size=7):
+        cells = {}
+        for y in range(size):
+            for x in range(size):
+                cells[(x, y)] = Tile(self.next_word())
+
+        plr_info = self.parse_player_info()
+        op_info = self.parse_player_info()
+        items = self.parse_items()
+        quests = self.parse_quests()
+        return Board(size, cells, plr_info, op_info, items, quests)
+
 
 class Position:
     def __init__(self, x, y):
@@ -98,33 +137,44 @@ class Position:
     def __add__(self, dir):
         return Position(self.x + dir.dx, self.y + dir.dy)
 
+    def __eq__(self, other):
+        return isinstance(other, Position) and self.x == other.x and self.y == other.y
+
     def __repr__(self):
         return "P[%d,%d]" % (self.x, self.y)
 
     def dist(self, dest):
         return abs(self.x - dest.x) + abs(self.y - dest.y)
 
+    def copy(self):
+        return Position(self.x, self.y)
+
 
 class Item:
-    def __init__(self, parser):
-        self.name = parser.next_word()
-        self.pos = Position(parser.next_int(), parser.next_int())
-        self.player_id = parser.next_int()
+    def __init__(self, name, pos, plr_id):
+        self.name = name
+        self.pos = pos
+        self.player_id = plr_id
 
     def __repr__(self):
         return "Item(%s,%s,%d)" % (self.name, self.pos, self.player_id)
 
 
 class Board:
-    def __init__(self, size, parser):
+    def __init__(self, size, cells, plr_info, op_info, items=[], quests=[]):
         self.size = size
-        self.cells = {}
-        for y in range(size):
-            for x in range(size):
-                self.cells[(x, y)] = Tile(parser.next_word())
+        self.cells = cells
+        self.player_info = plr_info
+        self.opponent_info = op_info
+        self.items = items
+        self.quests = quests
 
     def __repr__(self):
-        return "".join([" ".join([str(tile) for tile in row])+"\n" for row in self.cells])
+        s = ""
+        for y in range(self.size):
+            s += " ".join([str(self.cells[(x, y)])
+                           for x in range(self.size)]) + "\n"
+        return s
 
     def valid_pos(self, pos):
         return pos.x >= 0 and pos.x < self.size and pos.y >= 0 and pos.y < self.size
@@ -139,17 +189,10 @@ class Board:
                 return True
         return False
 
-    def get_possible_dirs(self, pos):
-        r = []
-        for dir in DIRS:
-            if self.can_go(pos, dir):
-                r.append(dir)
-        return r
-
     def nearest_paths(self, pos, dest):
         self.found_paths = []
         self.best_dist = pos.dist(dest)
-        #log("Walk from pos: %s, dist: %d" % (pos, self.best_dist))
+        # log("Walk from pos: %s, dist: %d" % (pos, self.best_dist))
 
         def walk(pos, path=[]):
             self.get_tile(pos).visited = True
@@ -168,8 +211,18 @@ class Board:
         walk(pos)
         return self.found_paths
 
-    def push(self, offset, dir, new_tile):
-        return self
+    def push(self, offset, dir):
+        cells = self.cells.copy()
+        plr_info = self.player_info.copy()
+        for i in range(1, self.size):
+            if dir == RIGHT:
+                if i == 1:
+                    tile = cells[(self.size-i, offset)]
+                cells[(self.size-i, offset)] = cells[(self.size-i-1, offset)]
+                if i == self.size-1:
+                    cells[(self.size-i-1, offset)] = plr_info.tile
+                    plr_info.tile = tile
+        return Board(self.size, cells, plr_info, self.opponent_info, self.items, self.quests)
 
 
 class Tile:
@@ -178,7 +231,7 @@ class Tile:
         self.visited = False
 
     def __eq__(self, other):
-        return self.pattern == other.pattern
+        return isinstance(other, Tile) and self.pattern == other.pattern
 
     def __repr__(self):
         # return TILES.get(self.pattern, "?")
@@ -195,22 +248,28 @@ class Tile:
             return True
         return False
 
+    def copy(self):
+        return Tile(self.pattern)
+
 
 class PlayerInfo:
-    def __init__(self, parser):
+    def __init__(self, num_cards, pos, tile):
         # num_player_cards: the total number of quests for a player (hidden and revealed)
-        self.num_player_cards = parser.next_int()
-        self.pos = Position(parser.next_int(), parser.next_int())
-        self.tile = Tile(parser.next_word())
+        self.num_cards = num_cards
+        self.pos = pos
+        self.tile = tile
 
     def __repr__(self):
-        return "PlayerInfo(%d,%s,%s)" % (self.num_player_cards, self.pos, self.tile)
+        return "PlayerInfo(%d,%s,%s)" % (self.num_cards, self.pos, self.tile)
+
+    def copy(self):
+        return PlayerInfo(self.num_cards, self.pos.copy(), self.tile.copy())
 
 
 class Quest:
-    def __init__(self, parser):
-        self.item_name = parser.next_word()
-        self.player_id = parser.next_int()
+    def __init__(self, name, plr_id):
+        self.item_name = name
+        self.player_id = plr_id
 
     def __repr__(self):
         return "Quest[%s,%d]" % (self.item_name, self.player_id)
@@ -220,13 +279,7 @@ def game_loop(parser):
     while True:
         turn_type = parser.next_int()
         log("Turn type: %d" % turn_type)
-        board = Board(7, parser)
-        player_info = PlayerInfo(parser)
-        opponent_info = PlayerInfo(parser)
-        num_items = parser.next_int()
-        items = [Item(parser) for _ in range(num_items)]
-        num_quests = parser.next_int()
-        quests = [Quest(parser) for _ in range(num_quests)]
+        board = parser.parse_board()
 
         # PUSH <id> <direction> | MOVE <direction> | PASS
         if turn_type == PUSH:
@@ -234,7 +287,8 @@ def game_loop(parser):
             n = random.randint(0, 6)
             print("PUSH %d %s" % (n, dir), flush=True)
         elif turn_type == MOVE:
-            paths = board.nearest_paths(player_info.pos, items[0].pos)
+            paths = board.nearest_paths(
+                board.player_info.pos, board.items[0].pos)
             path = paths[0]
             if len(path) == 0:
                 print("PASS", flush=True)
