@@ -32,6 +32,7 @@ TILES = {
 def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
+
 class Direction:
     def __init__(self, dx, dy):
         self.dx = dx
@@ -116,19 +117,20 @@ class Item:
 
 class Board:
     def __init__(self, size, parser):
-        self.cells = []
-        for _ in range(size):
-            self.cells.append([Tile(parser.next_word()) for _ in range(size)])
+        self.size = size
+        self.cells = {}
+        for y in range(size):
+            for x in range(size):
+                self.cells[(x, y)] = Tile(parser.next_word())
 
     def __repr__(self):
         return "".join([" ".join([str(tile) for tile in row])+"\n" for row in self.cells])
 
     def valid_pos(self, pos):
-        return pos.x >= 0 and pos.x < len(self.cells[0]) and \
-            pos.y >= 0 and pos.y < len(self.cells)
+        return pos.x >= 0 and pos.x < self.size and pos.y >= 0 and pos.y < self.size
 
     def get_tile(self, pos):
-        return self.cells[pos.y][pos.x]
+        return self.cells[(pos.x, pos.y)]
 
     def can_go(self, pos, dir):
         if self.valid_pos(pos + dir):
@@ -147,9 +149,9 @@ class Board:
     def nearest_paths(self, pos, dest):
         self.found_paths = []
         self.best_dist = pos.dist(dest)
-        log("Walk from pos: %s, dist: %d" % (pos, self.best_dist))
+        #log("Walk from pos: %s, dist: %d" % (pos, self.best_dist))
 
-        def walk(pos, path = []):
+        def walk(pos, path=[]):
             self.get_tile(pos).visited = True
             dist = pos.dist(dest)
             if dist == self.best_dist:
@@ -166,6 +168,9 @@ class Board:
         walk(pos)
         return self.found_paths
 
+    def push(self, offset, dir, new_tile):
+        return self
+
 
 class Tile:
     def __init__(self, pattern):
@@ -176,14 +181,18 @@ class Tile:
         return self.pattern == other.pattern
 
     def __repr__(self):
-        #return TILES.get(self.pattern, "?")
+        # return TILES.get(self.pattern, "?")
         return self.pattern
 
     def can_go(self, dir):
-        if dir == UP and self.pattern[0] == "1": return True
-        if dir == RIGHT and self.pattern[1] == "1": return True
-        if dir == DOWN and self.pattern[2] == "1": return True
-        if dir == LEFT and self.pattern[3] == "1": return True
+        if dir == UP and self.pattern[0] == "1":
+            return True
+        if dir == RIGHT and self.pattern[1] == "1":
+            return True
+        if dir == DOWN and self.pattern[2] == "1":
+            return True
+        if dir == LEFT and self.pattern[3] == "1":
+            return True
         return False
 
 
@@ -234,6 +243,6 @@ def game_loop(parser):
         else:
             print("???", flush=True)
 
+
 if __name__ == "__main__":
     game_loop(Parser(sys.stdin))
-
