@@ -1,92 +1,239 @@
 
 import sys
 import math
+import io
+import random
 
 # Help the Christmas elves fetch presents in a magical labyrinth!
 
 PUSH = 0
 MOVE = 1
 
+TILES = {
+    "0000": ' ',
+    "0001": '╴',
+    "0010": '╵',
+    "0011": '┐',
+    "0100": '╶',
+    "0101": '─',
+    "0110": '┌',
+    "0111": '┬',
+    "1000": '╷',
+    "1001": '┘',
+    "1010": '│',
+    "1011": '┤',
+    "1100": '└',
+    "1101": '┴',
+    "1110": '├',
+    "1111": '┼'
+}
+
 
 def log(msg):
-    print(msg, file=sys.stderr)
+    print(msg, file=sys.stderr, flush=True)
+
+class Direction:
+    def __init__(self, dx, dy):
+        self.dx = dx
+        self.dy = dy
+        self.names = {
+            (0, -1): "UP",
+            (1, 0): "RIGHT",
+            (0, 1): "DOWN",
+            (-1, 0): "LEFT"
+        }
+
+    def __repr__(self):
+        return self.names[(self.dx, self.dy)]
+
+    def __eq__(self, other):
+        return self.dx == other.dx and self.dy == other.dy
+
+    def opposite(self):
+        return Direction(-self.dx, -self.dy)
+
+
+UP = Direction(0, -1)
+RIGHT = Direction(1, 0)
+DOWN = Direction(0, 1)
+LEFT = Direction(-1, 0)
+
+DIRS = [UP, RIGHT, DOWN, LEFT]
+
+
+class Parser:
+    def __init__(self, data):
+        if type(data) == str:
+            data = io.StringIO(data)
+        self.file = data
+
+    def is_ws(self, ch):
+        return ch in [' ', '\t', '\r', '\n']
+
+    def skip_ws(self):
+        ch = self.file.read(1)
+        while ch != '' and self.is_ws(ch):
+            ch = self.file.read(1)
+        return ch
+
+    def next_word(self):
+        w = self.skip_ws()
+        while w != '':
+            ch = self.file.read(1)
+            if ch == '' or self.is_ws(ch):
+                break
+            w = w + ch
+        return w
+
+    def next_int(self):
+        return int(self.next_word())
+
+
+class Position:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __add__(self, dir):
+        return Position(self.x + dir.dx, self.y + dir.dy)
+
+    def __repr__(self):
+        return "P[%d,%d]" % (self.x, self.y)
+
+    def dist(self, dest):
+        return abs(self.x - dest.x) + abs(self.y - dest.y)
 
 
 class Item:
-    def __init__(self):
-        name, x, y, player_id = input().split()
-        self.name = name
-        self.x = int(x)
-        self.y = int(y)
-        self.player_id = int(player_id)
+    def __init__(self, parser):
+        self.name = parser.next_word()
+        self.pos = Position(parser.next_int(), parser.next_int())
+        self.player_id = parser.next_int()
 
-    def __str__(self):
-        return "Item(%s,%d,%d,%d)" % (self.name, self.x, self.y, self.player_id)
+    def __repr__(self):
+        return "Item(%s,%s,%d)" % (self.name, self.pos, self.player_id)
 
 
 class Board:
-    def __init__(self, size=7, src=sys.stdin):
+    def __init__(self, size, parser):
         self.cells = []
-        self.items = []
-        for _ in range(size+1):
-            self.cells.append(src.readline().split())
+        for _ in range(size):
+            self.cells.append([Tile(parser.next_word()) for _ in range(size)])
 
-    def __str__(self):
-        return "\n".join(["|".join(r) for r in self.cells]) + "\nItems:" + ",".join([str(i) for i in self.items])
+    def __repr__(self):
+        return "".join([" ".join([str(tile) for tile in row])+"\n" for row in self.cells])
 
-    def read_items(self):
-        # the total number of items available on board and on player tiles
-        num_items = int(input())
-        self.items = [Item() for _ in range(num_items)]
+    def valid_pos(self, pos):
+        return pos.x >= 0 and pos.x < len(self.cells[0]) and \
+            pos.y >= 0 and pos.y < len(self.cells)
 
-    def reachable_cells(self):
-        return []
+    def get_tile(self, pos):
+        return self.cells[pos.y][pos.x]
+
+    def can_go(self, pos, dir):
+        if self.valid_pos(pos + dir):
+            if self.get_tile(pos).can_go(dir) and self.get_tile(pos + dir).can_go(dir.opposite()) and \
+                    not self.get_tile(pos + dir).visited:
+                return True
+        return False
+
+    def get_possible_dirs(self, pos):
+        r = []
+        for dir in DIRS:
+            if self.can_go(pos, dir):
+                r.append(dir)
+        return r
+
+    def nearest_paths(self, pos, dest):
+        self.found_paths = []
+        self.best_dist = pos.dist(dest)
+        log("Walk from pos: %s, dist: %d" % (pos, self.best_dist))
+
+        def walk(pos, path = []):
+            self.get_tile(pos).visited = True
+            dist = pos.dist(dest)
+            if dist == self.best_dist:
+                self.found_paths.append(path)
+            elif dist < self.best_dist:
+                self.found_paths = [path]
+                self.best_dist = dist
+
+            for dir in DIRS:
+                if self.can_go(pos, dir) and len(path) < 20:
+                    walk(pos + dir, path + [dir])
+            self.get_tile(pos).visited = False
+
+        walk(pos)
+        return self.found_paths
 
 
 class Tile:
     def __init__(self, pattern):
         self.pattern = pattern
+        self.visited = False
 
-    def __str__(self):
-        return "[%s]" % self.pattern
+    def __eq__(self, other):
+        return self.pattern == other.pattern
+
+    def __repr__(self):
+        #return TILES.get(self.pattern, "?")
+        return self.pattern
+
+    def can_go(self, dir):
+        if dir == UP and self.pattern[0] == "1": return True
+        if dir == RIGHT and self.pattern[1] == "1": return True
+        if dir == DOWN and self.pattern[2] == "1": return True
+        if dir == LEFT and self.pattern[3] == "1": return True
+        return False
 
 
 class PlayerInfo:
-    def __init__(self):
+    def __init__(self, parser):
         # num_player_cards: the total number of quests for a player (hidden and revealed)
-        info = input().split()
-        self.num_player_cards = int(info[0])
-        self.player_x = int(info[1])
-        self.player_y = int(info[2])
-        self.tile = Tile(info[3])
+        self.num_player_cards = parser.next_int()
+        self.pos = Position(parser.next_int(), parser.next_int())
+        self.tile = Tile(parser.next_word())
 
-    def __str__(self):
-        return "PlayerInfo(%d,%d,%d,%s)" % (self.num_player_cards, self.player_x, self.player_y, self.tile)
+    def __repr__(self):
+        return "PlayerInfo(%d,%s,%s)" % (self.num_player_cards, self.pos, self.tile)
 
 
 class Quest:
-    def __init__(self):
-        item_name, player_id = input().split()
-        self.item_name = item_name
-        self.player_id = int(player_id)
+    def __init__(self, parser):
+        self.item_name = parser.next_word()
+        self.player_id = parser.next_int()
+
+    def __repr__(self):
+        return "Quest[%s,%d]" % (self.item_name, self.player_id)
 
 
-def game_loop():
+def game_loop(parser):
     while True:
-        turn_type = int(input())
-        board = Board()
-        player_info = PlayerInfo()
-        opponent_info = PlayerInfo()
-        board.read_items()
-        num_quests = int(input())
-        quests = [Quest() for _ in range(num_quests)]
+        turn_type = parser.next_int()
+        log("Turn type: %d" % turn_type)
+        board = Board(7, parser)
+        player_info = PlayerInfo(parser)
+        opponent_info = PlayerInfo(parser)
+        num_items = parser.next_int()
+        items = [Item(parser) for _ in range(num_items)]
+        num_quests = parser.next_int()
+        quests = [Quest(parser) for _ in range(num_quests)]
 
         # PUSH <id> <direction> | MOVE <direction> | PASS
         if turn_type == PUSH:
-            print("PUSH 3 RIGHT")
+            dir = random.choice(DIRS)
+            n = random.randint(0, 6)
+            print("PUSH %d %s" % (n, dir), flush=True)
+        elif turn_type == MOVE:
+            paths = board.nearest_paths(player_info.pos, items[0].pos)
+            path = paths[0]
+            if len(path) == 0:
+                print("PASS", flush=True)
+            else:
+                print("MOVE %s" % " ".join([str(d) for d in path]), flush=True)
         else:
-            print("PASS")
-
+            print("???", flush=True)
 
 if __name__ == "__main__":
-    game_loop()
+    game_loop(Parser(sys.stdin))
+
