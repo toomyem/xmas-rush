@@ -141,6 +141,55 @@ class Item:
         return "Item(%s,%s,%d)" % (self.name, self.pos, self.player_id)
 
 
+class Tile:
+    def __init__(self, pattern):
+        self.pattern = pattern
+        self.visited = False
+
+    def __eq__(self, other):
+        return isinstance(other, Tile) and self.pattern == other.pattern
+
+    def __repr__(self):
+        return self.pattern
+
+    def can_go(self, dir):
+        if dir == UP and self.pattern[0] == "1":
+            return True
+        if dir == RIGHT and self.pattern[1] == "1":
+            return True
+        if dir == DOWN and self.pattern[2] == "1":
+            return True
+        if dir == LEFT and self.pattern[3] == "1":
+            return True
+        return False
+
+    def copy(self):
+        return Tile(self.pattern)
+
+
+class PlayerInfo:
+    def __init__(self, num_cards, pos, tile):
+        # num_player_cards: the total number of quests for a player (hidden and revealed)
+        self.num_cards = num_cards
+        self.pos = pos
+        self.tile = tile
+
+    def __repr__(self):
+        return "PlayerInfo(%d,%s,%s)" % (self.num_cards, self.pos, self.tile)
+
+    def copy(self):
+        return PlayerInfo(self.num_cards, self.pos.copy(), self.tile.copy())
+
+
+class Quest:
+    def __init__(self, name, plr_id):
+        self.item_name = name
+        self.player_id = plr_id
+
+    def __repr__(self):
+        return "Quest[%s,%d]" % (self.item_name, self.player_id)
+
+
 class Board:
     def __init__(self, size, cells, plr_info, op_info, items=[], quests=[]):
         self.size = size
@@ -158,6 +207,20 @@ class Board:
         s += str(self.player_info) + "\n" + \
             str(self.opponent_info) + "\n" + str(self.items) + "\n"
         return s
+
+    def get_item(self):
+        my_quests = [q for q in self.quests if q.player_id == 0]
+        my_quest = my_quests[0]
+        items = [i for i in self.items if i.name == my_quest.item_name and i.player_id == 0]
+        item = items[0]
+        log("Item: %s" % item)
+        return item
+
+    def possible_moves(self):
+        for d in DIRS:
+            for n in range(0, self.size):
+                yield (d, n)
+
 
     def valid_pos(self, pos):
         return pos.x >= 0 and pos.x < self.size and pos.y >= 0 and pos.y < self.size
@@ -224,9 +287,9 @@ class Board:
             cells[0][offset] = plr_info.tile
             plr_info.tile = tile
             if plr_info.pos.x == offset:
-                plr_info.pos.y = (plr_info.pos.y + 1) & self.size
+                plr_info.pos.y = (plr_info.pos.y + 1) % self.size
             if opp_info.pos.x == offset:
-                opp_info.pos.y = (opp_info.pos.y + 1) & self.size
+                opp_info.pos.y = (opp_info.pos.y + 1) % self.size
             for i in items:
                 if i.pos.x == offset:
                     i.pos.y = (i.pos.y + 1) % self.size
@@ -250,66 +313,14 @@ class Board:
             cells[N][offset] = plr_info.tile
             plr_info.tile = tile
             if plr_info.pos.x == offset:
-                plr_info.pos.y = (plr_info.pos.y + N) & self.size
+                plr_info.pos.y = (plr_info.pos.y + N) % self.size
             if opp_info.pos.x == offset:
-                opp_info.pos.y = (opp_info.pos.y + N) & self.size
+                opp_info.pos.y = (opp_info.pos.y + N) % self.size
             for i in items:
                 if i.pos.x == offset:
                     i.pos.y = (i.pos.y + N) % self.size
 
         return Board(self.size, cells, plr_info, opp_info, items, self.quests)
-
-
-class Tile:
-    def __init__(self, pattern):
-        self.pattern = pattern
-        self.visited = False
-
-    def __eq__(self, other):
-        return isinstance(other, Tile) and self.pattern == other.pattern
-
-    def __repr__(self):
-        return self.pattern
-
-    def can_go(self, dir):
-        if dir == UP and self.pattern[0] == "1":
-            return True
-        if dir == RIGHT and self.pattern[1] == "1":
-            return True
-        if dir == DOWN and self.pattern[2] == "1":
-            return True
-        if dir == LEFT and self.pattern[3] == "1":
-            return True
-        return False
-
-    def copy(self):
-        return Tile(self.pattern)
-
-
-class PlayerInfo:
-    def __init__(self, num_cards, pos, tile):
-        # num_player_cards: the total number of quests for a player (hidden and revealed)
-        self.num_cards = num_cards
-        self.pos = pos
-        self.tile = tile
-
-    def __repr__(self):
-        return "PlayerInfo(%d,%s,%s)" % (self.num_cards, self.pos, self.tile)
-
-    def copy(self):
-        return PlayerInfo(self.num_cards, self.pos.copy(), self.tile.copy())
-
-
-class Quest:
-    def __init__(self, name, plr_id):
-        self.item_name = name
-        self.player_id = plr_id
-
-    def __repr__(self):
-        return "Quest[%s,%d]" % (self.item_name, self.player_id)
-
-
-MOVES = [m for m in zip(DIRS, range(0, 7))]
 
 
 def game_loop(parser):
@@ -323,25 +334,27 @@ def game_loop(parser):
         # PUSH <id> <direction> | MOVE <direction> | PASS
         if turn_type == 0:
             best_dist = 1e6
-            best_move = None
-            for move in MOVES:
+            best_moves = []
+            for move in board.possible_moves():
                 log(move)
-                d, offset = move
-                b2 = board.push(offset, d)
+                d, n = move
+                b2 = board.push(n, d)
                 paths = b2.nearest_paths(
-                    b2.player_info.pos, [i for i in b2.items if i.player_id == 0][0].pos)
-                log("paths: %s" % str(paths))
+                    b2.player_info.pos, b2.get_item().pos)
+                #log("paths: %s" % str(paths))
                 if b2.best_dist < best_dist:
                     best_dist = b2.best_dist
-                    best_move = move
-                    log(best_dist)
-
-            dir, n = best_move
+                    best_moves = [move]
+                    log("new best dist: %d" % best_dist)
+                elif b2.best_dist == best_dist:
+                    best_moves.append(move)
+            log("best_dist: %d\nmoves: %s" % (best_dist, str(best_moves)))
+            dir, n = random.choice(best_moves)
             print("PUSH %d %s" % (n, dir), flush=True)
         else:
-            log(board)
+            #log(board)
             paths = board.nearest_paths(
-                board.player_info.pos, [i for i in board.items if i.player_id == 0][0].pos)
+                board.player_info.pos, board.get_item().pos)
             path = paths[0]
             if len(path) == 0:
                 print("PASS", flush=True)
