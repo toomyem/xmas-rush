@@ -26,8 +26,9 @@ class TestBoard(unittest.TestCase):
         1110 1100 1001
         1101 0011 0000
         1 0 0 0001
-        1 2 0 0010
-        0 0""")
+        1 2 1 0010
+        1 A 0 1 0
+        0""")
         self.board = parser.parse_board(3)
 
     def test_get_tile(self):
@@ -45,9 +46,25 @@ class TestBoard(unittest.TestCase):
         b = self.board
         b2 = b.push(1, game.RIGHT)
         self.assertEqual(
-            repr(b2), "0110 1011 0111\n0001 1110 1100\n1101 0011 0000\n")
-        self.assertEqual(b2.player_info.tile, game.Tile("1001"))
-        self.assertEqual(b.player_info.pos, b2.player_info.pos)
+            repr(b2), "0110 1011 0111\n0001 1110 1100\n1101 0011 0000\nPlayerInfo(1,P[0,0],1001)\nPlayerInfo(1,P[0,1],0010)\n[Item(A,P[1,1],0)]\n")
+
+    def test_push_down(self):
+        b = self.board
+        b2 = b.push(2, game.DOWN)
+        self.assertEqual(
+            repr(b2), "0110 1011 0001\n1110 1100 0111\n1101 0011 1001\nPlayerInfo(1,P[0,0],0000)\nPlayerInfo(1,P[2,2],0010)\n[Item(A,P[0,1],0)]\n")
+
+    def test_push_left(self):
+        b = self.board
+        b2 = b.push(0, game.LEFT)
+        self.assertEqual(
+            repr(b2), "1011 0111 0001\n1110 1100 1001\n1101 0011 0000\nPlayerInfo(1,P[2,0],0110)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,1],0)]\n")
+
+    def test_push_up(self):
+        b = self.board
+        b2 = b.push(0, game.UP)
+        self.assertEqual(
+            repr(b2), "1110 1011 0111\n1101 1100 1001\n0001 0011 0000\nPlayerInfo(1,P[0,2],0110)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,0],0)]\n")
 
 
 class TestPosition(unittest.TestCase):

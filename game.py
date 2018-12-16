@@ -3,30 +3,9 @@ import sys
 import math
 import io
 import random
+import copy
 
 # Help the Christmas elves fetch presents in a magical labyrinth!
-
-PUSH = 0
-MOVE = 1
-
-TILES = {
-    "0000": ' ',
-    "0001": '╴',
-    "0010": '╵',
-    "0011": '┐',
-    "0100": '╶',
-    "0101": '─',
-    "0110": '┌',
-    "0111": '┬',
-    "1000": '╷',
-    "1001": '┘',
-    "1010": '│',
-    "1011": '┤',
-    "1100": '└',
-    "1101": '┴',
-    "1110": '├',
-    "1111": '┼'
-}
 
 
 def log(msg):
@@ -60,6 +39,27 @@ DOWN = Direction(0, 1)
 LEFT = Direction(-1, 0)
 
 DIRS = [UP, RIGHT, DOWN, LEFT]
+
+
+class Position:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __add__(self, dir):
+        return Position(self.x + dir.dx, self.y + dir.dy)
+
+    def __eq__(self, other):
+        return isinstance(other, Position) and self.x == other.x and self.y == other.y
+
+    def __repr__(self):
+        return "P[%d,%d]" % (self.x, self.y)
+
+    def dist(self, dest):
+        return abs(self.x - dest.x) + abs(self.y - dest.y)
+
+    def copy(self):
+        return Position(self.x, self.y)
 
 
 class Parser:
@@ -117,37 +117,18 @@ class Parser:
         return quests
 
     def parse_board(self, size=7):
-        cells = {}
-        for y in range(size):
-            for x in range(size):
-                cells[(x, y)] = Tile(self.next_word())
+        cells = []
+        for _ in range(size):
+            row = []
+            for _ in range(size):
+                row.append(Tile(self.next_word()))
+            cells.append(row)
 
         plr_info = self.parse_player_info()
         op_info = self.parse_player_info()
         items = self.parse_items()
         quests = self.parse_quests()
         return Board(size, cells, plr_info, op_info, items, quests)
-
-
-class Position:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __add__(self, dir):
-        return Position(self.x + dir.dx, self.y + dir.dy)
-
-    def __eq__(self, other):
-        return isinstance(other, Position) and self.x == other.x and self.y == other.y
-
-    def __repr__(self):
-        return "P[%d,%d]" % (self.x, self.y)
-
-    def dist(self, dest):
-        return abs(self.x - dest.x) + abs(self.y - dest.y)
-
-    def copy(self):
-        return Position(self.x, self.y)
 
 
 class Item:
@@ -172,15 +153,17 @@ class Board:
     def __repr__(self):
         s = ""
         for y in range(self.size):
-            s += " ".join([str(self.cells[(x, y)])
+            s += " ".join(["%s" % self.cells[y][x]
                            for x in range(self.size)]) + "\n"
+        s += str(self.player_info) + "\n" + \
+            str(self.opponent_info) + "\n" + str(self.items) + "\n"
         return s
 
     def valid_pos(self, pos):
         return pos.x >= 0 and pos.x < self.size and pos.y >= 0 and pos.y < self.size
 
     def get_tile(self, pos):
-        return self.cells[(pos.x, pos.y)]
+        return self.cells[pos.y][pos.x]
 
     def can_go(self, pos, dir):
         if self.valid_pos(pos + dir):
@@ -192,7 +175,7 @@ class Board:
     def nearest_paths(self, pos, dest):
         self.found_paths = []
         self.best_dist = pos.dist(dest)
-        # log("Walk from pos: %s, dist: %d" % (pos, self.best_dist))
+        log("pos: %s, dest: %s" % (str(pos), str(dest)))
 
         def walk(pos, path=[]):
             self.get_tile(pos).visited = True
@@ -208,21 +191,73 @@ class Board:
                     walk(pos + dir, path + [dir])
             self.get_tile(pos).visited = False
 
-        walk(pos)
+        if self.valid_pos(dest):
+            walk(pos)
+        else:
+            self.found_paths.append([])
         return self.found_paths
 
     def push(self, offset, dir):
-        cells = self.cells.copy()
+        cells = copy.deepcopy(self.cells)
         plr_info = self.player_info.copy()
-        for i in range(1, self.size):
-            if dir == RIGHT:
-                if i == 1:
-                    tile = cells[(self.size-i, offset)]
-                cells[(self.size-i, offset)] = cells[(self.size-i-1, offset)]
-                if i == self.size-1:
-                    cells[(self.size-i-1, offset)] = plr_info.tile
-                    plr_info.tile = tile
-        return Board(self.size, cells, plr_info, self.opponent_info, self.items, self.quests)
+        opp_info = self.opponent_info.copy()
+        items = self.items.copy()
+        N = self.size-1
+
+        if dir == RIGHT:
+            tile = cells[offset][N]
+            for i in range(N, 0, -1):
+                cells[offset][i] = cells[offset][i-1]
+            cells[offset][0] = plr_info.tile
+            plr_info.tile = tile
+            if plr_info.pos.y == offset:
+                plr_info.pos.x = (plr_info.pos.x + 1) % self.size
+            if opp_info.pos.y == offset:
+                opp_info.pos.x = (opp_info.pos.x + 1) % self.size
+            for i in items:
+                if i.pos.y == offset:
+                    i.pos.x = (i.pos.x + 1) % self.size
+        elif dir == DOWN:
+            tile = cells[N][offset]
+            for i in range(N, 0, -1):
+                cells[i][offset] = cells[i-1][offset]
+            cells[0][offset] = plr_info.tile
+            plr_info.tile = tile
+            if plr_info.pos.x == offset:
+                plr_info.pos.y = (plr_info.pos.y + 1) & self.size
+            if opp_info.pos.x == offset:
+                opp_info.pos.y = (opp_info.pos.y + 1) & self.size
+            for i in items:
+                if i.pos.x == offset:
+                    i.pos.y = (i.pos.y + 1) % self.size
+        elif dir == LEFT:
+            tile = cells[offset][0]
+            for i in range(0, N):
+                cells[offset][i] = cells[offset][i+1]
+            cells[offset][N] = plr_info.tile
+            plr_info.tile = tile
+            if plr_info.pos.y == offset:
+                plr_info.pos.x = (plr_info.pos.x + N) % self.size
+            if opp_info.pos.y == offset:
+                opp_info.pos.x = (opp_info.pos.x + N) % self.size
+            for i in items:
+                if i.pos.y == offset:
+                    i.pos.x = (i.pos.x + N) % self.size
+        elif dir == UP:
+            tile = cells[0][offset]
+            for i in range(0, N):
+                cells[i][offset] = cells[i+1][offset]
+            cells[N][offset] = plr_info.tile
+            plr_info.tile = tile
+            if plr_info.pos.x == offset:
+                plr_info.pos.y = (plr_info.pos.y + N) & self.size
+            if opp_info.pos.x == offset:
+                opp_info.pos.y = (opp_info.pos.y + N) & self.size
+            for i in items:
+                if i.pos.x == offset:
+                    i.pos.y = (i.pos.y + N) % self.size
+
+        return Board(self.size, cells, plr_info, opp_info, items, self.quests)
 
 
 class Tile:
@@ -234,7 +269,6 @@ class Tile:
         return isinstance(other, Tile) and self.pattern == other.pattern
 
     def __repr__(self):
-        # return TILES.get(self.pattern, "?")
         return self.pattern
 
     def can_go(self, dir):
@@ -275,27 +309,44 @@ class Quest:
         return "Quest[%s,%d]" % (self.item_name, self.player_id)
 
 
+MOVES = [m for m in zip(DIRS, range(0, 7))]
+
+
 def game_loop(parser):
     while True:
         turn_type = parser.next_int()
         log("Turn type: %d" % turn_type)
         board = parser.parse_board()
+        log("Items: %s" % board.items)
+        log("Quests: %s" % board.quests)
 
         # PUSH <id> <direction> | MOVE <direction> | PASS
-        if turn_type == PUSH:
-            dir = random.choice(DIRS)
-            n = random.randint(0, 6)
+        if turn_type == 0:
+            best_dist = 1e6
+            best_move = None
+            for move in MOVES:
+                log(move)
+                d, offset = move
+                b2 = board.push(offset, d)
+                paths = b2.nearest_paths(
+                    b2.player_info.pos, [i for i in b2.items if i.player_id == 0][0].pos)
+                log("paths: %s" % str(paths))
+                if b2.best_dist < best_dist:
+                    best_dist = b2.best_dist
+                    best_move = move
+                    log(best_dist)
+
+            dir, n = best_move
             print("PUSH %d %s" % (n, dir), flush=True)
-        elif turn_type == MOVE:
+        else:
+            log(board)
             paths = board.nearest_paths(
-                board.player_info.pos, board.items[0].pos)
+                board.player_info.pos, [i for i in board.items if i.player_id == 0][0].pos)
             path = paths[0]
             if len(path) == 0:
                 print("PASS", flush=True)
             else:
                 print("MOVE %s" % " ".join([str(d) for d in path]), flush=True)
-        else:
-            print("???", flush=True)
 
 
 if __name__ == "__main__":
