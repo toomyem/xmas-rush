@@ -138,7 +138,7 @@ class Item:
         self.player_id = plr_id
 
     def __repr__(self):
-        return "Item(%s,%s,%d)" % (self.name, self.pos, self.player_id)
+        return "(%s,%s,%d)" % (self.name, self.pos, self.player_id)
 
 
 class Tile:
@@ -187,7 +187,7 @@ class Quest:
         self.player_id = plr_id
 
     def __repr__(self):
-        return "Quest[%s,%d]" % (self.item_name, self.player_id)
+        return "{%s,%d}" % (self.item_name, self.player_id)
 
 
 class Board:
@@ -208,19 +208,17 @@ class Board:
             str(self.opponent_info) + "\n" + str(self.items) + "\n"
         return s
 
-    def get_item(self):
+    def get_items(self):
         my_quests = [q for q in self.quests if q.player_id == 0]
-        my_quest = my_quests[0]
-        items = [i for i in self.items if i.name == my_quest.item_name and i.player_id == 0]
-        item = items[0]
-        log("Item: %s" % item)
-        return item
+        #log("my quests: %s" % str(my_quests))
+        items = [i for i in self.items if i.name in [
+            q.item_name for q in my_quests] and i.player_id == 0]
+        return items
 
     def possible_moves(self):
         for d in DIRS:
             for n in range(0, self.size):
                 yield (d, n)
-
 
     def valid_pos(self, pos):
         return pos.x >= 0 and pos.x < self.size and pos.y >= 0 and pos.y < self.size
@@ -237,12 +235,11 @@ class Board:
 
     def nearest_paths(self, pos, dest):
         self.found_paths = []
-        self.best_dist = pos.dist(dest)
-        log("pos: %s, dest: %s" % (str(pos), str(dest)))
+        self.best_dist = min([pos.dist(d) for d in dest])
 
         def walk(pos, path=[]):
             self.get_tile(pos).visited = True
-            dist = pos.dist(dest)
+            dist = min([pos.dist(d) for d in dest])
             if dist == self.best_dist:
                 self.found_paths.append(path)
             elif dist < self.best_dist:
@@ -254,17 +251,20 @@ class Board:
                     walk(pos + dir, path + [dir])
             self.get_tile(pos).visited = False
 
-        if self.valid_pos(dest):
+        valid = [d for d in dest if self.valid_pos(d)]
+        if len(valid) > 0:
             walk(pos)
         else:
             self.found_paths.append([])
+        log("pos: %s, dest: %s, dist: %d" %
+            (str(pos), str(dest), self.best_dist))
         return self.found_paths
 
     def push(self, offset, dir):
         cells = copy.deepcopy(self.cells)
         plr_info = self.player_info.copy()
         opp_info = self.opponent_info.copy()
-        items = self.items.copy()
+        items = copy.deepcopy(self.items)
         N = self.size-1
 
         if dir == RIGHT:
@@ -280,6 +280,8 @@ class Board:
             for i in items:
                 if i.pos.y == offset:
                     i.pos.x = (i.pos.x + 1) % self.size
+                elif i.pos.x == -1:
+                    i.pos = Position(0, offset)
         elif dir == DOWN:
             tile = cells[N][offset]
             for i in range(N, 0, -1):
@@ -293,6 +295,8 @@ class Board:
             for i in items:
                 if i.pos.x == offset:
                     i.pos.y = (i.pos.y + 1) % self.size
+                elif i.pos.x == -1:
+                    i.pos = Position(offset, 0)
         elif dir == LEFT:
             tile = cells[offset][0]
             for i in range(0, N):
@@ -306,6 +310,8 @@ class Board:
             for i in items:
                 if i.pos.y == offset:
                     i.pos.x = (i.pos.x + N) % self.size
+                elif i.pos.x == -1:
+                    i.pos = Position(N, offset)
         elif dir == UP:
             tile = cells[0][offset]
             for i in range(0, N):
@@ -319,43 +325,73 @@ class Board:
             for i in items:
                 if i.pos.x == offset:
                     i.pos.y = (i.pos.y + N) % self.size
+                elif i.pos.x == -1:
+                    i.pos = Position(offset, N)
 
         return Board(self.size, cells, plr_info, opp_info, items, self.quests)
 
 
 def game_loop(parser):
+    last_move = ()
+    stale = 0
+
     while True:
         turn_type = parser.next_int()
         log("Turn type: %d" % turn_type)
         board = parser.parse_board()
-        log("Items: %s" % board.items)
-        log("Quests: %s" % board.quests)
+        log("Items: %s" % board.get_items())
+        #log("Quests: %s" % board.quests)
 
         # PUSH <id> <direction> | MOVE <direction> | PASS
         if turn_type == 0:
             best_dist = 1e6
             best_moves = []
+
             for move in board.possible_moves():
                 log(move)
                 d, n = move
                 b2 = board.push(n, d)
-                paths = b2.nearest_paths(
-                    b2.player_info.pos, b2.get_item().pos)
-                #log("paths: %s" % str(paths))
+                items = b2.get_items()
+                log("items: %s" % str(items))
+                paths = b2.nearest_paths(b2.player_info.pos, [
+                                         i.pos for i in items])
                 if b2.best_dist < best_dist:
                     best_dist = b2.best_dist
                     best_moves = [move]
                     log("new best dist: %d" % best_dist)
                 elif b2.best_dist == best_dist:
                     best_moves.append(move)
+                if best_dist == 0:
+                    break
             log("best_dist: %d\nmoves: %s" % (best_dist, str(best_moves)))
             dir, n = random.choice(best_moves)
+            if last_move == (dir, n):
+                stale += 1
+                if stale > 3:
+                    log("STALE!")
+                    dir = random.choice(DIRS)
+                    n = random.randint(0, 6)
+                    stale = 0
+                    last_move = (dir, n)
+            else:
+                stale = 0
+                last_move = (dir, n)
             print("PUSH %d %s" % (n, dir), flush=True)
         else:
-            #log(board)
+            best_dist = 1e6
+            best_paths = []
+            items = board.get_items()
             paths = board.nearest_paths(
-                board.player_info.pos, board.get_item().pos)
-            path = paths[0]
+                board.player_info.pos, [i.pos for i in items])
+            if board.best_dist < best_dist:
+                best_dist = board.best_dist
+                best_paths = paths
+                log("new best dist: %d\npaths: %s" %
+                    (best_dist, best_paths))
+            elif board.best_dist == best_dist:
+                best_paths.extend(paths)
+            log("paths: %s" % str(best_paths))
+            path = random.choice(best_paths)
             if len(path) == 0:
                 print("PASS", flush=True)
             else:

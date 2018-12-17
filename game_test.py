@@ -66,6 +66,20 @@ class TestBoard(unittest.TestCase):
         self.assertEqual(
             repr(b2), "1110 1011 0111\n1101 1100 1001\n0001 0011 0000\nPlayerInfo(1,P[0,2],0110)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,0],0)]\n")
 
+    def test_push_from_outside(self):
+        parser = game.Parser("""
+        0110 1011 0111
+        1110 1100 1001
+        1101 0011 0000
+        1 0 0 0001
+        1 2 1 0010
+        1 A -1 -1 0
+        0""")
+        b = parser.parse_board(3)
+        b2 = b.push(0, game.RIGHT)
+        self.assertEqual(
+            repr(b2), "0001 0110 1011\n1110 1100 1001\n1101 0011 0000\nPlayerInfo(1,P[1,0],0111)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,0],0)]\n")
+
 
 class TestPosition(unittest.TestCase):
     def test_add(self):
