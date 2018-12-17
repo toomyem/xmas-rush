@@ -38,7 +38,7 @@ class TestBoard(unittest.TestCase):
 
     def test_paths(self):
         b = self.board
-        paths = b.nearest_paths(game.Position(0, 0), game.Position(2, 2))
+        paths = b.nearest_paths(game.Position(0, 0), [game.Position(2, 2)])
         self.assertListEqual(paths, [[game.RIGHT, game.DOWN, game.RIGHT], [
                              game.DOWN, game.DOWN, game.RIGHT]])
 
@@ -46,25 +46,25 @@ class TestBoard(unittest.TestCase):
         b = self.board
         b2 = b.push(1, game.RIGHT)
         self.assertEqual(
-            repr(b2), "0110 1011 0111\n0001 1110 1100\n1101 0011 0000\nPlayerInfo(1,P[0,0],1001)\nPlayerInfo(1,P[0,1],0010)\n[Item(A,P[1,1],0)]\n")
+            repr(b2), "0110 1011 0111\n0001 1110 1100\n1101 0011 0000\nPlayerInfo(1,P[0,0],1001)\nPlayerInfo(1,P[0,1],0010)\n[(A,P[1,1],0)]\n")
 
     def test_push_down(self):
         b = self.board
         b2 = b.push(2, game.DOWN)
         self.assertEqual(
-            repr(b2), "0110 1011 0001\n1110 1100 0111\n1101 0011 1001\nPlayerInfo(1,P[0,0],0000)\nPlayerInfo(1,P[2,2],0010)\n[Item(A,P[0,1],0)]\n")
+            repr(b2), "0110 1011 0001\n1110 1100 0111\n1101 0011 1001\nPlayerInfo(1,P[0,0],0000)\nPlayerInfo(1,P[2,2],0010)\n[(A,P[0,1],0)]\n")
 
     def test_push_left(self):
         b = self.board
         b2 = b.push(0, game.LEFT)
         self.assertEqual(
-            repr(b2), "1011 0111 0001\n1110 1100 1001\n1101 0011 0000\nPlayerInfo(1,P[2,0],0110)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,1],0)]\n")
+            repr(b2), "1011 0111 0001\n1110 1100 1001\n1101 0011 0000\nPlayerInfo(1,P[2,0],0110)\nPlayerInfo(1,P[2,1],0010)\n[(A,P[0,1],0)]\n")
 
     def test_push_up(self):
         b = self.board
         b2 = b.push(0, game.UP)
         self.assertEqual(
-            repr(b2), "1110 1011 0111\n1101 1100 1001\n0001 0011 0000\nPlayerInfo(1,P[0,2],0110)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,0],0)]\n")
+            repr(b2), "1110 1011 0111\n1101 1100 1001\n0001 0011 0000\nPlayerInfo(1,P[0,2],0110)\nPlayerInfo(1,P[2,1],0010)\n[(A,P[0,0],0)]\n")
 
     def test_push_from_outside(self):
         parser = game.Parser("""
@@ -78,7 +78,14 @@ class TestBoard(unittest.TestCase):
         b = parser.parse_board(3)
         b2 = b.push(0, game.RIGHT)
         self.assertEqual(
-            repr(b2), "0001 0110 1011\n1110 1100 1001\n1101 0011 0000\nPlayerInfo(1,P[1,0],0111)\nPlayerInfo(1,P[2,1],0010)\n[Item(A,P[0,0],0)]\n")
+            repr(b2), "0001 0110 1011\n1110 1100 1001\n1101 0011 0000\nPlayerInfo(1,P[1,0],0111)\nPlayerInfo(1,P[2,1],0010)\n[(A,P[0,0],0)]\n")
+
+    def test_possible_moves(self):
+        b = self.board
+        b.player_info.pos = game.Position(1, 0)
+        pm = b.possible_moves()
+        for m in pm:
+            print(m)
 
 
 class TestPosition(unittest.TestCase):

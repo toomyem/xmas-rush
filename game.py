@@ -216,9 +216,15 @@ class Board:
         return items
 
     def possible_moves(self):
-        for d in DIRS:
-            for n in range(0, self.size):
-                yield (d, n)
+        for n in [-1, 0, 1]:
+            nx = self.player_info.pos.x + n
+            if nx >= 0 and nx < self.size:
+                yield((UP, nx))
+                yield((DOWN, nx))
+            ny = self.player_info.pos.y + n
+            if ny >= 0 and ny < self.size:
+                yield((LEFT, ny))
+                yield((RIGHT, ny))
 
     def valid_pos(self, pos):
         return pos.x >= 0 and pos.x < self.size and pos.y >= 0 and pos.y < self.size
@@ -236,10 +242,11 @@ class Board:
     def nearest_paths(self, pos, dest):
         self.found_paths = []
         self.best_dist = min([pos.dist(d) for d in dest])
+        valid = [d for d in dest if self.valid_pos(d)]
 
         def walk(pos, path=[]):
             self.get_tile(pos).visited = True
-            dist = min([pos.dist(d) for d in dest])
+            dist = min([pos.dist(d) for d in valid])
             if dist == self.best_dist:
                 self.found_paths.append(path)
             elif dist < self.best_dist:
@@ -251,13 +258,12 @@ class Board:
                     walk(pos + dir, path + [dir])
             self.get_tile(pos).visited = False
 
-        valid = [d for d in dest if self.valid_pos(d)]
         if len(valid) > 0:
             walk(pos)
+            log("pos: %s, dest: %s, dist: %d" %
+                (str(pos), str(valid), self.best_dist))
         else:
             self.found_paths.append([])
-        log("pos: %s, dest: %s, dist: %d" %
-            (str(pos), str(dest), self.best_dist))
         return self.found_paths
 
     def push(self, offset, dir):
